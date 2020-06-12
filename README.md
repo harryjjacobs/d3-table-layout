@@ -14,9 +14,9 @@ nodes are allowed. The nodes with a depth of zero are used as tables. The nodes 
 remain as nodes. Nodes with a depth greater than 1 are not supported (the nodes cannot have children).
 
 The returned graph has the following properties:
-* graph.tables - the array of tables (top-level nodes)
-* graph.nodes - the array of nodes
-* graph.links - the array of links
+* tables - the array of tables (top-level nodes)
+* nodes - the array of nodes
+* links - the array of links
 
 In addition to all the properties from [`d3.hierarchy()`](https://github.com/d3/d3-hierarchy#hierarchy)
 resulting tables will have the following properties:
