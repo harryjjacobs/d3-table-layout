@@ -1,4 +1,4 @@
-# d3-table-layout
+# d3-table-layout (WiP)
 Grouped node layout with orthogonal links 
 
 ## API Reference
