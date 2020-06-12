@@ -19,7 +19,7 @@ The returned graph has the following properties:
 * links - the array of links
 
 In addition to all the properties from [`d3.hierarchy()`](https://github.com/d3/d3-hierarchy#hierarchy)
-resulting tables will have the following properties:
+resulting nodes will have the following properties:
 * x - The x position of the node or table
 * y - The y position of the node or table
 
