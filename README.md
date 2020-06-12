@@ -29,6 +29,7 @@ The tables will have the following properties in addition to those of the nodes,
 
 Currently only a single column layout is supported for tables.
 
+## Examples
 ```javascript
 var nodes = [
   {
@@ -48,7 +49,6 @@ var nodes = [
 ]
 ```
 
-## Examples
 ```javascript
 d3.tableLayout().size([width, height]).nodeSize([nodeWidth, nodeHeight])(nodes);
 ```
