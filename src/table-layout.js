@@ -1,7 +1,7 @@
 import "d3-hierarchy";
 import "d3-force";
 import { default as bboxCollide } from "./bbox-collide";
-import OrthogonalRouter from "./orthogonal-routing";
+import { default as OrthogonalRouter, direction } from "./orthogonal-routing";
 
 export default function() {
   var width = 50,
@@ -164,31 +164,37 @@ export default function() {
     let t1 = performance.now();
     console.log(`Generating OVG took ${(t1 - t0).toFixed(2)}ms`);
 
+    // Add routing information to layout
+    // for debugging
+    layout.routingData = {
+      poi: router._poi,
+      ovg: router._ovg,
+      h: router._h,
+      v: router._v,
+      routes: []
+    };
+
     // route a path for all of the (visible) links
     // and shift points in link by a small amount
     // to avoid overlap
-    let pathShiftAmount = 0;
-    layout.links.forEach(link => {
+    layout.links.forEach((link, i) => {
       t0 = performance.now();
       // find route using A* path finder
-      // copy points to new array of 
-      // clean points
-      link.points = router.findRoute(
+      const route = router.findRoute(
         _computeConnectorPoint(link.source),
         _computeConnectorPoint(link.target)
-      ).map(p => ({ x: p.x, y: p.y }));
+      )
+      layout.routingData.routes.push(route);
+      // copy points to new array of
+      // clean points
+      link.points = route.map(p => ({ x: p.x, y: p.y }));
       t1 = performance.now();
       console.log(`A* route finder took ${(t1 - t0).toFixed(2)}ms for link`, link);
-      _performPathShift(link.points, { x: pathShiftAmount, y: pathShiftAmount });
-      pathShiftAmount += pathShift;
+      // translate each 
+      _performPathShift(link.points, i, pathShift);
     });
 
-    console.log(layout.links);
-
-    layout.poi = router._poi;
-    layout.ovg = router._ovg;
-    layout.h = router._h;
-    layout.v = router._v;
+    console.log(layout.routingData);
   }
 
   /**
@@ -198,26 +204,33 @@ export default function() {
    * @param {Point[]} path 
    * @param {Point} translation 
    */
-  function _performPathShift(path, translation) {
-    for (let i = 0; i < path.length; i++) {
+  function _performPathShift(path, index, pathShift) {
+    const translation = index * pathShift;
+    for (let i = 1; i < path.length - 1; i++) {
+      let currDir = direction(path[i - 1], path[i]);
       const point = path[i];
       if (i == 1) {
         if (point.x === path[0].x) {
-          point.y += translation.y;
+          point.y += translation;
         } else if (point.y === path[0].y) {
-          point.x += translation.x;
+          point.x += translation;
         }
       }
       if (i == path.length - 2) {
         if (point.x === path[path.length - 1].x) {
-          point.y += translation.y;
+          point.y += translation;
         } else if (point.y === path[path.length - 1].y) {
-          point.x += translation.x;
+          point.x += translation;
         }
       }
       if (i > 1 && i < path.length - 2) {
-        point.x += translation.x;
-        point.y += translation.y;
+        if (currDir === 1 || currDir === 3) {
+          // east, west
+          point.x += translation;
+        } else if (currDir === 0 || currDir === 2) {
+          // north, south
+          point.y += translation;
+        }
       }
     }
   }
