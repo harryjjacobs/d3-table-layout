@@ -1,4 +1,5 @@
 import BinaryHeap from "./binary-heap";
+const FLOAT_TOLERANCE = 0.0000001;
 /**
  * Orthogonal connector routing between points.
  * Loosely based on:
@@ -31,6 +32,7 @@ OrthogonalRouter.prototype.setObstacles = function(obstacleCorners) {
  */
 OrthogonalRouter.prototype.setConnectorPoints = function(connectorPoints) {
   this._connectorPoints = connectorPoints;
+  this._connectorPoints.forEach(c => c.isConnector = true);
 }
 
 /**
@@ -100,7 +102,7 @@ OrthogonalRouter.prototype.findRoute = function(start, end) {
   while (openNodes.size() > 0) {
     // get node with lowest f score
     const currentNode = openNodes.pop();
-    if (currentNode === end || _arePointsEqual(currentNode, end)) {
+    if (currentNode === end) {
       // we have reached the end
       return _reconstructAStarPath(currentNode);
     }
@@ -109,14 +111,15 @@ OrthogonalRouter.prototype.findRoute = function(start, end) {
     currentNode.closed = true;
     // loop over neighbours
     for (const [_, neighbour] of Object.entries(currentNode.neighbours)) {
-      if (neighbour.closed) continue;
+      // don't travel through closed nodes or connectors (other than the end connector)
+      if (neighbour.closed || (neighbour.isConnector && neighbour !== end)) continue;
       // keep track of whether node has been visited
       // before so that score can be updated in binary
       // heap
       const previouslyVisited = neighbour.visited;
       // g is distance from start node to neighbour, through current
       // pointDistanceSquared is the edge weight between current and this neighbour.
-      const tentativeG = currentNode.g + _pointDistanceSquared(currentNode, neighbour);
+      const tentativeG = currentNode.g + _edgeWeight(currentNode, neighbour);
       if (!previouslyVisited || tentativeG < neighbour.g) {
         neighbour.g = tentativeG;
         // h is the heuristic that estimates the cost of the
@@ -161,16 +164,52 @@ function _manhattanHeuristic(a, b) {
 }
 
 /**
- * Squared euclidean distance between two points
- * @param {Point} a 
- * @param {Point} b 
+ * Weight of travelling along an edge
+ * between two nodes, for A* path finding.
+ * Based on euclidean distance and also 
+ * uses the parent property of each
+ * node to add a cost for turns.
+ * @param {Object} current 
+ * @param {Object} neighbour 
  */
-function _pointDistanceSquared(a, b) {
-  return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
+function _edgeWeight(current, neighbour) {
+  let weight = (current.x - neighbour.x) * (current.x - neighbour.x) +
+    (current.y - neighbour.y) * (current.y - neighbour.y);
+
+  if (current.parent) {
+    let currentDir = direction(current.parent, current);
+    let newDir = direction(current, neighbour);
+    if (currentDir !== newDir) {
+      weight += 0.1;
+    }
+  }
+
+  return weight;
 }
 
 /**
- * Assembles point of interset (poi) from the connector points and obstacles' corners.
+ * Determines the direction between two points
+ * represented as 0, 1, 2, 3 for north, east,
+ * south, west. -1 for unknown.
+ * @param {Point} a 
+ * @param {Point} b 
+ */
+export function direction(a, b) {
+  if ((b.x - a.x) > FLOAT_TOLERANCE) {
+    return 1; // east
+  } else if ((b.x - a.x) < -FLOAT_TOLERANCE) {
+    return 3; // west
+  } else if ((b.y - a.y) > FLOAT_TOLERANCE) {
+    return 2; // south
+  } else if ((b.y - a.y) < -FLOAT_TOLERANCE) {
+    return 0; // north
+  }
+
+  return -1;
+}
+
+/**
+ * Assembles point of interest (poi) from the connector points and obstacles' corners.
  * Travels north, south, east, west from a point until a table is intersected or the edge of the layout is hit
  * Returns the resulting h and v segments
  * @param {Point[]} connectorPoints The connector points (and any additional points of interest - excluding obstacle corners.)
@@ -207,6 +246,7 @@ function _findInterestingSegments(connectorPoints, obstaclesCorners, area) {
   });
   // find horizontal and vertical segments for each point of interest
   poi.forEach(point => {
+    // define ordinal extremities
     let north = area.y;
     let south = area.y + area.h;
     let west = area.x;
@@ -285,26 +325,44 @@ function _findInterestingSegments(connectorPoints, obstaclesCorners, area) {
 function _intersectInterestingSegments(h, v) {
   let ovg = [];
   for (let hIndex = 0; hIndex < h.length; hIndex++) {
-    const hSeg = h[hIndex];
     for (let vIndex = 0; vIndex < v.length; vIndex++) {
+      // hIndex can change during progress of this inner loop
+      // so grab a reference here each time instead of in outer loop
+      const hSeg = h[hIndex];
       const vSeg = v[vIndex];
       let intersection = _intersectLineSegments(hSeg, vSeg);
-      // check if intersection is at end of h line segment - if so
-      // use that point instead of creating a new one
-      if (_arePointsEqual(intersection, hSeg.a)) intersection = hSeg.a;
-      if (_arePointsEqual(intersection, hSeg.b)) intersection = hSeg.b;
       if (intersection) {
-        // skip intersections at table corners
-        // this assumes that the points in these two segments
-        // are already neighbours.
+        // check if intersection is at end of h line segment - if so
+        // use that point instead of creating a new one
+        if (_arePointsEqual(intersection, hSeg.a)) intersection = hSeg.a;
+        if (_arePointsEqual(intersection, hSeg.b)) intersection = hSeg.b;
+        // ignore intersections at segment corners.
+        // we can safely assume that the shared points
+        // in these two segments are already neighbours.
         if (_areSegmentsConnected(hSeg, vSeg)) continue;
+        // begin assigning new neighbours generated by the
+        // intersection
         intersection.neighbours = {};
         if (hSeg.a.x < intersection.x) {
+          // split vertical line segment into two segments
+          const leftSeg = { a: hSeg.a, b: intersection };
+          const rightSeg = { a: intersection, b: hSeg.b };
+          // remove original segment from vertical list
+          // and replace with the two new ones
+          h.splice(hIndex, 1, leftSeg, rightSeg);
+          hIndex--; // skip behind the newly inserted items
           hSeg.a.neighbours.east = intersection;
           intersection.neighbours.west = hSeg.a;
           hSeg.b.neighbours.west = intersection;
           intersection.neighbours.east = hSeg.b;
         } else {
+          // split vertical line segment into two segments
+          const leftSeg = { a: intersection, b: hSeg.b };
+          const rightSeg = { a: hSeg.a, b: intersection };
+          // remove original segment from vertical list
+          // and replace with the two new ones
+          h.splice(hIndex, 1, leftSeg, rightSeg);
+          hIndex--; // skip behind the newly inserted items
           hSeg.a.neighbours.west = intersection;
           intersection.neighbours.east = hSeg.a;
           hSeg.b.neighbours.east = intersection;
@@ -343,7 +401,7 @@ function _intersectInterestingSegments(h, v) {
 }
 
 /**
- * Based on Paul Bourke http://paulbourke.net/geometry/pointlineplane/
+ * From Paul Bourke http://paulbourke.net/geometry/pointlineplane/
  * Determine the intersection point of two line segments.
  * Return FALSE if the lines don't intersect.
  * @param {Object} seg1 Line segment 1
@@ -399,7 +457,7 @@ function _areSegmentsConnected(seg1, seg2) {
  * @param {Point} p2 
  */
 function _arePointsEqual(p1, p2) {
-  return (Math.abs(p1.x - p2.x) < Number.EPSILON) && (Math.abs(p1.y - p2.y) < Number.EPSILON);
+  return (Math.abs(p1.x - p2.x) < FLOAT_TOLERANCE) && (Math.abs(p1.y - p2.y) < FLOAT_TOLERANCE);
 }
 
 /**
