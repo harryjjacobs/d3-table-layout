@@ -1,7 +1,8 @@
 var tape = require("tape"),
-    tableLayout = require("..");
+  tableLayout = require("..");
+import OrthogonalRouter from "../src/orthogonal-routing";
 
-tape("", function(test) {
-  //test.equal(,);
+tape("A* node direction function", function(test) {
+  //test.equal(OrthogonalRouter.d, );
   //test.end();
 });
